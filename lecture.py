@@ -50,10 +50,12 @@ most_freq = (
 )
 
 tags100 = (
-    tags
+    tags    
     .merge(most_freq, left_index= True, right_index = True)
     .sort_values('count', ascending = False)
 )
+
+del(tg_freq, most_freq)
 
 # remove nonsense
 tags100.query('goodreads_book_id < 1000')
@@ -81,6 +83,8 @@ bk_tag_dummy = pd.get_dummies(bk_tags100)
 bk_tag_dummy.shape
 bk_tag_dummy.goodreads_book_id.drop_duplicates().size
 
+del(tags100)
+
 # check the tags per book
 tg_per_book = (
     bk_tag_dummy
@@ -94,3 +98,48 @@ tg_per_book.describe()
 idx = tg_per_book.query('tag_id == 47').index.values
 book[book.book_id.isin(idx)].iloc[:,:10]
 del(idx, tg_per_book)
+
+# ratings frequency
+usr_rat = (
+    rats
+    .groupby('user_id')
+    .size()
+    .sort_values()
+    .reset_index()
+    .rename({0 : 'ratings'}, axis = 1)
+)
+
+usr_rat.ratings.describe()
+
+_ = plt.scatter(x = usr_rat.index, y = usr_rat.ratings)
+_ = plt.xlabel('Users')
+_ = plt.ylabel('# ratings per user')
+_ = plt.hlines(22, 0, 55000)
+plt.show()
+
+del(usr_rat)
+
+# one user one book, more ratings?
+rat_dup = (
+        rats
+        .groupby(['user_id', 'book_id'])
+        .size()
+)
+
+rat_dup = (
+    rat_dup
+    [rat_dup>1]
+    .reset_index()
+    .merge(rats, on = ['user_id', 'book_id'])
+    .rename({0:'dups'}, axis = 1)
+)
+
+max_rat = rats.groupby(['book_id', 'user_id']).rating.transform(max)
+rats = rats.loc[rats.rating == max_rat].drop_duplicates()
+
+sum(
+    rats
+    .groupby(['user_id', 'book_id'])
+    .size() 
+    > 1
+)
