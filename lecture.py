@@ -79,24 +79,30 @@ bk_tags100 = (
     .rename({'goodreads_book_id_x': 'goodreads_book_id'}, axis = 1)
 )
 
-bk_tag_dummy = pd.get_dummies(bk_tags100)
-bk_tag_dummy.shape
-bk_tag_dummy.goodreads_book_id.drop_duplicates().size
+bk_tag_mat = (
+    bk_tags100
+    .drop('tag_name', axis = 1)
+    .assign(help = 1)
+    .pivot_table(
+        values = 'help',
+        index = 'goodreads_book_id',
+        columns = 'tag_id',
+        fill_value = 0)
+)
+bk_tag_mat.iloc[:10, :10]
+bk_tag_mat.shape
 
 del(tags100)
 
 # check the tags per book
-tg_per_book = (
-    bk_tag_dummy
-    .loc[:,['goodreads_book_id', 'tag_id']]
-    .groupby('goodreads_book_id')
-    .count()
-)
+tg_per_book = bk_tag_mat.apply(sum, axis = 1)
 
 tg_per_book.describe()
 
-idx = tg_per_book.query('tag_id == 47').index.values
+idx = tg_per_book[tg_per_book == 47].index.values
 book[book.book_id.isin(idx)].iloc[:,:10]
+bk_tags100.query('goodreads_book_id == @idx[0]')
+
 del(idx, tg_per_book)
 
 # ratings frequency
