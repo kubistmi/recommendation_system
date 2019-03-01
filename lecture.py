@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import scipy.spatial.distance as dst
 
 os.listdir('data')
 
@@ -59,17 +60,17 @@ del(tg_freq, most_freq)
 
 # remove nonsense
 tags100.query('goodreads_book_id < 1000')
-tags100 = tags100[~tags100.tag_name.str.contains('read|own|buy|default|ya')]
+tags100 = tags100[~tags100.tag_name.str.contains('read|own|buy|default|ya|favorit')]
 tags100.loc[:,['count', 'goodreads_book_id']].describe()
 
 # fancy plots
 _ = plt.hist(tags100.goodreads_book_id, bins = 20)
 _ = plt.xlabel('# books with given tag')
 _ = plt.ylabel('Frequency')
-plt.show()
+#plt.show()
 
 _ = plt.scatter(tags100['count'], tags100.goodreads_book_id)
-plt.show()
+#plt.show()
 
 # define table of tag dummies
 bk_tags100 = (
@@ -105,6 +106,24 @@ bk_tags100.query('goodreads_book_id == @idx[0]')
 
 del(idx, tg_per_book)
 
+# distance test
+a = bk_tag_mat.iloc[:1000,]
+b = a.dot(a.T)
+(b.apply(np.mean)).describe()
+
+one = np.zeros(82)
+one[:26] = 1
+
+two = np.zeros(82)
+two[13:39] = 1
+
+np.linalg.norm(one - two)
+np.sqrt(np.linalg.norm(one)**2 + np.linalg.norm(two)**2)
+
+dst.cosine(one, two)
+
+del(a, b, one, two)
+
 # ratings frequency
 usr_rat = (
     rats
@@ -121,9 +140,7 @@ _ = plt.scatter(x = usr_rat.index, y = usr_rat.ratings)
 _ = plt.xlabel('Users')
 _ = plt.ylabel('# ratings per user')
 _ = plt.hlines(22, 0, 55000)
-plt.show()
-
-del(usr_rat)
+#plt.show()
 
 # one user one book, more ratings?
 rat_dup = (
@@ -149,3 +166,36 @@ sum(
     .size() 
     > 1
 )
+
+# rating distribution
+rats.rating.describe()
+
+_ = plt.hist(rats.rating)
+plt.show()
+
+rats.groupby('rating').size()
+
+# good and bad ratings
+rats = rats.assign(good = rats.rating == 5).astype(int)
+
+np.random.seed(1234)
+user = (
+    usr_rat
+    .query('ratings > 50')
+    .sample()
+    .reset_index()
+)
+user
+
+user = rats[rats.user_id == user.user_id[0]]
+
+sum(user.good)
+
+# KNN reccommendation for selected user
+(
+    user[['book_id']]
+    .merge(bk_tag_mat, right_index = True, left_on = 'book_id')
+    .set_index('book_id')
+).head()
+
+user
