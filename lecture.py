@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.spatial.distance as dst
+from sklearn.neighbors import KNeighborsClassifier as knn_cls
 
 os.listdir('data')
 
@@ -198,11 +199,98 @@ user = rats[rats.user_id == user.user_id[0]]
 
 sum(user.good)
 
-# KNN reccommendation for selected user
-(
-    user[['book_id']]
-    .merge(bk_tag_mat, right_index = True, left_on = 'book_id')
-    .set_index('book_id')
-).head()
+del(usr_rat)
 
-user
+# prepare tags of books read by user
+user_rat = (
+    user[['book_id', 'good']]
+    .merge(book[['id', 'book_id']], left_on = 'book_id', right_on = 'id')
+    .drop('id', axis = 1)
+    .rename({'book_id_x' : 'book_id', 'book_id_y':'goodreads_book_id'}, axis = 1)
+    .merge(bk_tag_mat, how = 'left', left_on = 'goodreads_book_id', right_index = True)
+    .drop('goodreads_book_id', axis = 1)
+    .set_index('book_id')
+)
+user_rat
+
+# prepare tags of books not-read by user
+bk_top = (
+    rats
+    [~rats.book_id.isin(user_rat.index.values)]
+    .groupby('book_id')
+    .good
+    .mean()
+    .sort_values(ascending = False)
+    [:300]
+)
+bk_top
+
+other_rat = (
+    book[['id','book_id']]
+    [book.id.isin(bk_top.index)]
+    .merge(bk_tag_mat, how = 'left', left_on = 'book_id', right_index = True)
+    .drop('book_id', axis = 1)
+    .rename({'id':'book_id'}, axis = 1)
+    .set_index('book_id')
+)
+other_rat
+
+# KNN recommendations
+knn = knn_cls(weights= 'distance', n_jobs= -1)
+knn_trained = knn.fit(user_rat.drop('good', axis = 1), user_rat.good)
+knn_meta = knn_trained.kneighbors(other_rat)
+
+other_rat['pred'] = knn_trained.predict(other_rat)
+other_rat['dist'] = np.apply_along_axis(np.mean, 1, knn_meta[0])
+
+del(knn, knn_trained, knn_meta)
+
+knn_rec = (
+    other_rat
+    .query('pred == 1')
+    .sort_values('dist')
+    .iloc[:10, -2:]
+)
+knn_rec
+
+# validate results - tags?
+pred = (
+    book
+    [book.id.isin(knn_rec.index)]
+    [['book_id']]
+    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .groupby('tag_name')
+    [['tag_id']]
+    .count()
+    .sort_values('tag_id', ascending = False)
+    [:10]
+    /knn_rec.shape[0]
+)
+
+act = (
+    book
+    [book.id.isin(user_rat.index)]
+    [['book_id']]
+    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .groupby('tag_name')
+    [['tag_id']]
+    .count()
+    .sort_values('tag_id', ascending = False)
+    .iloc[:10]
+    /user_rat.shape[0]
+)
+
+act.merge(
+    pred, how = 'outer',
+    left_index = True, right_index = True,
+    suffixes = ('_act', '_pred')
+    )
+
+del(act, pred)
+
+# validate results - to read?
+user_to_read = to_read[to_read.user_id == user.user_id.iloc[0]]
+user_to_read.book_id.isin(knn_rec.index).values
+
+# validate results - most frequent?
+knn_rec.index.isin(bk_top.index[:20])
