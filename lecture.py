@@ -60,7 +60,9 @@ del(tg_freq, most_freq)
 
 # remove nonsense
 tags100.query('goodreads_book_id < 1000')
-tags100 = tags100[~tags100.tag_name.str.contains('read|own|buy|default|ya|favorit')]
+
+tags_pat = 'read|own|buy|default|ya|favo(u){0,1}rit|book|library|wish'
+tags100 = tags100[~tags100.tag_name.str.contains(tags_pat)]
 tags100.loc[:,['count', 'goodreads_book_id']].describe()
 
 # fancy plots
@@ -100,7 +102,7 @@ tg_per_book = bk_tag_mat.apply(sum, axis = 1)
 
 tg_per_book.describe()
 
-idx = tg_per_book[tg_per_book == 47].index.values
+idx = tg_per_book[tg_per_book == max(tg_per_book)].index.values
 book[book.book_id.isin(idx)].iloc[:,:10]
 bk_tags100.query('goodreads_book_id == @idx[0]')
 
@@ -125,6 +127,8 @@ dst.cosine(one, two)
 del(a, b, one, two)
 
 # ratings frequency
+rats.user_id.drop_duplicates().count()
+
 usr_rat = (
     rats
     .groupby('user_id')
@@ -167,17 +171,20 @@ sum(
     > 1
 )
 
+del(max_rat, rat_dup)
+
 # rating distribution
 rats.rating.describe()
 
 _ = plt.hist(rats.rating)
-plt.show()
+#plt.show()
 
 rats.groupby('rating').size()
 
 # good and bad ratings
 rats = rats.assign(good = rats.rating == 5).astype(int)
 
+# choose an user
 np.random.seed(1234)
 user = (
     usr_rat
