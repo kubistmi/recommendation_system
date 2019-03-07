@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.spatial.distance as dst
 from sklearn.neighbors import KNeighborsClassifier as knn_cls
+from sklearn.decomposition import PCA
 
 os.listdir('data')
 
@@ -211,7 +212,7 @@ user_rat = (
     .drop('goodreads_book_id', axis = 1)
     .set_index('book_id')
 )
-user_rat
+user_rat.iloc[:10,:10]
 
 # prepare tags of books not-read by user
 bk_top = (
@@ -233,7 +234,7 @@ other_rat = (
     .rename({'id':'book_id'}, axis = 1)
     .set_index('book_id')
 )
-other_rat
+other_rat.iloc[:10,:10]
 
 # KNN recommendations
 knn = knn_cls(weights= 'distance', n_jobs= -1)
@@ -294,3 +295,123 @@ user_to_read.book_id.isin(knn_rec.index).values
 
 # validate results - most frequent?
 knn_rec.index.isin(bk_top.index[:20])
+
+del(user_rat, other_rat)
+
+# PCA
+pca = PCA().fit(bk_tag_mat)
+
+_ = plt.plot(pca.explained_variance_ratio_, marker = 'x')
+# plt.show()
+
+imp_comps = [i for i in pca.explained_variance_ratio_ if i > 0.05]
+comps = pd.DataFrame(pca.components_).T
+
+comps.set_index(bk_tag_mat.columns, inplace = True)
+comps.iloc[:10, :10]
+
+comps = comps.iloc[:, :len(imp_comps)]
+
+comps = (
+    tags
+    .merge(comps, left_on = 'tag_id', right_index = True)
+    .drop('tag_id', axis = 1)
+    .set_index('tag_name')
+)
+ # PCA interpret
+for i in range(len(imp_comps)):
+    print('PCA' + str(i+1) + '  ###################')
+    x = comps[i]
+    x = x.reindex(x.abs().sort_values(ascending = False).index)[:5]
+    print(x)
+
+# PCA transform
+bk_pca = (
+    PCA(n_components = len(imp_comps))
+    .fit(bk_tag_mat)
+    .transform(bk_tag_mat)
+)
+
+bk_pca = pd.DataFrame(bk_pca, index = bk_tag_mat.index)
+del(comps, imp_comps, i)
+
+# PCA user and other ratings
+user_pca = (
+    user[['book_id', 'good']]
+    .merge(book[['id', 'book_id']], left_on = 'book_id', right_on = 'id')
+    .drop('id', axis = 1)
+    .rename({'book_id_x' : 'book_id', 'book_id_y':'goodreads_book_id'}, axis = 1)
+    .merge(bk_pca, how = 'left', left_on = 'goodreads_book_id', right_index = True)
+    .drop('goodreads_book_id', axis = 1)
+    .set_index('book_id')
+)
+user_pca.head()
+
+other_pca = (
+    book[['id','book_id']]
+    [book.id.isin(bk_top.index)]
+    .merge(bk_pca, how = 'left', left_on = 'book_id', right_index = True)
+    .drop('book_id', axis = 1)
+    .rename({'id':'book_id'}, axis = 1)
+    .set_index('book_id')
+)
+other_pca.head()
+
+# PCA KNN
+knn = knn_cls(weights = 'distance', n_jobs = -1)
+knn_trained = knn.fit(user_pca.drop('good', axis = 1), user_pca.good)
+knn_meta = knn_trained.kneighbors(other_pca)
+
+other_pca['pred'] = knn_trained.predict(other_pca)
+other_pca['dist'] = np.apply_along_axis(np.mean, 1, knn_meta[0])
+
+del(knn, knn_trained, knn_meta)
+
+knn_rec_pca = (
+    other_pca
+    .query('pred == 1')
+    .sort_values('dist')
+    .iloc[:10, -2:]
+)
+knn_rec_pca
+
+# PCA validate results - tags?
+pred = (
+    book
+    [book.id.isin(knn_rec_pca.index)]
+    [['book_id']]
+    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .groupby('tag_name')
+    [['tag_id']]
+    .count()
+    .sort_values('tag_id', ascending = False)
+    [:10]
+    /knn_rec_pca.shape[0]
+)
+
+act = (
+    book
+    [book.id.isin(user_pca.index)]
+    [['book_id']]
+    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .groupby('tag_name')
+    [['tag_id']]
+    .count()
+    .sort_values('tag_id', ascending = False)
+    .iloc[:10]
+    /user_pca.shape[0]
+)
+
+act.merge(
+    pred, how = 'outer',
+    left_index = True, right_index = True,
+    suffixes = ('_act', '_pred')
+    )
+
+del(act, pred)
+
+# PCA validate results - to read?
+user_to_read = to_read[to_read.user_id == user.user_id.iloc[0]]
+user_to_read.book_id.isin(knn_rec_pca.index).values
+
+del(bk_pca, user_pca, other_pca, knn_rec_pca)
