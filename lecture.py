@@ -236,7 +236,34 @@ other_rat = (
 other_rat
 
 # KNN recommendations
-knn = knn_cls(weights= 'distance', n_jobs= -1)
+
+# validated k
+tr_x, te_x, tr_y, te_y = tts(
+    user_rat.drop('good', axis = 1),
+    user_rat.good,
+    test_size = 0.2,
+    random_state = 12345
+    )
+
+def knn_train(k):
+    global tr_x, tr_y, te_x, te_y
+    pred = (
+        knn_cls(n_neighbors = k, n_jobs= -1)
+        .fit(tr_x, tr_y)
+        .score(te_x, te_y) 
+    )
+    return(pred)
+
+# show accuracy
+k_arr = range(1,20)
+acc = [knn_train(i) for i in k_arr]
+acc
+
+_ = plt.plot(k_arr, acc)
+_ = plt.xticks(k_arr, k_arr)
+#plt.show()
+
+knn = knn_cls(n_neighbors = 3, weights= 'distance', n_jobs= -1)
 knn_trained = knn.fit(user_rat.drop('good', axis = 1), user_rat.good)
 knn_meta = knn_trained.kneighbors(other_rat)
 
