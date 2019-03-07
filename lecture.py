@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.spatial.distance as dst
 from sklearn.neighbors import KNeighborsClassifier as knn_cls
+from sklearn.model_selection import train_test_split as tts
 
 os.listdir('data')
 
@@ -62,7 +63,7 @@ del(tg_freq, most_freq)
 # remove nonsense
 tags100.query('goodreads_book_id < 1000')
 
-tags_pat = 'read|own|buy|default|ya|favo(u){0,1}rit|book|library|wish'
+tags_pat = 'read|own|buy|default|favou?rit|book|library|wish'
 tags100 = tags100[~tags100.tag_name.str.contains(tags_pat)]
 tags100.loc[:,['count', 'goodreads_book_id']].describe()
 
@@ -114,11 +115,11 @@ a = bk_tag_mat.iloc[:1000,]
 b = a.dot(a.T)
 (b.apply(np.mean)).describe()
 
-one = np.zeros(82)
-one[:26] = 1
+one = np.zeros(69)
+one[:17] = 1
 
-two = np.zeros(82)
-two[13:39] = 1
+two = np.zeros(69)
+two[9:26] = 1
 
 np.linalg.norm(one - two)
 np.sqrt(np.linalg.norm(one)**2 + np.linalg.norm(two)**2)
@@ -144,7 +145,7 @@ usr_rat.ratings.describe()
 _ = plt.scatter(x = usr_rat.index, y = usr_rat.ratings)
 _ = plt.xlabel('Users')
 _ = plt.ylabel('# ratings per user')
-_ = plt.hlines(22, 0, 55000)
+_ = plt.hlines(usr_rat.ratings.mean(), 0, 55000)
 #plt.show()
 
 # one user one book, more ratings?
@@ -161,6 +162,7 @@ rat_dup = (
     .merge(rats, on = ['user_id', 'book_id'])
     .rename({0:'dups'}, axis = 1)
 )
+rat_dup.head()
 
 max_rat = rats.groupby(['book_id', 'user_id']).rating.transform(max)
 rats = rats.loc[rats.rating == max_rat].drop_duplicates()
@@ -211,7 +213,7 @@ user_rat = (
     .drop('goodreads_book_id', axis = 1)
     .set_index('book_id')
 )
-user_rat
+user_rat.head()
 
 # prepare tags of books not-read by user
 bk_top = (
@@ -221,9 +223,9 @@ bk_top = (
     .good
     .mean()
     .sort_values(ascending = False)
-    [:300]
+    [:1000]
 )
-bk_top
+bk_top.head()
 
 other_rat = (
     book[['id','book_id']]
@@ -233,7 +235,7 @@ other_rat = (
     .rename({'id':'book_id'}, axis = 1)
     .set_index('book_id')
 )
-other_rat
+other_rat.iloc[:10,:10]
 
 # KNN recommendations
 
@@ -320,4 +322,4 @@ user_to_read = to_read[to_read.user_id == user.user_id.iloc[0]]
 user_to_read.book_id.isin(knn_rec.index).values
 
 # validate results - most frequent?
-knn_rec.index.isin(bk_top.index[:20])
+knn_rec.index.isin(bk_top.index[:100])
