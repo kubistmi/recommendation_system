@@ -330,9 +330,9 @@ del(user_rat, other_rat)
 pca = PCA().fit(bk_tag_mat)
 
 _ = plt.plot(pca.explained_variance_ratio_, marker = 'x')
-# plt.show()
+#plt.show()
 
-imp_comps = [i for i in pca.explained_variance_ratio_ if i > 0.05]
+imp_comps = [i for i in pca.explained_variance_ratio_ if i > 0.015]
 comps = pd.DataFrame(pca.components_).T
 
 comps.set_index(bk_tag_mat.columns, inplace = True)
@@ -348,7 +348,7 @@ comps = (
 )
  # PCA interpret
 for i in range(len(imp_comps)):
-    print('PCA' + str(i+1) + '  ###################')
+    print('PCA' + str(i+1) + '  ' + 20*'#')
     x = comps[i]
     x = x.reindex(x.abs().sort_values(ascending = False).index)[:5]
     print(x)
@@ -443,3 +443,46 @@ user_to_read = to_read[to_read.user_id == user.user_id.iloc[0]]
 user_to_read.book_id.isin(knn_rec_pca.index).values
 
 del(bk_pca, user_pca, other_pca, knn_rec_pca)
+
+# Collaborative Filtering - item
+
+# rat_mat = (
+#     rats
+#     [['book_id', 'user_id', 'good']]
+#     .pivot_table(
+#         values = 'good',
+#         index = 'user_id',
+#         columns = 'book_id',
+#         fill_value = np.nan)
+# )
+
+# check IDs
+rats.book_id.sort_values().drop_duplicates()
+rats.user_id.sort_values().drop_duplicates()
+
+rat_mat = sparse.csr_matrix((rats.good, (rats.user_id-1, rats.book_id-1)))
+
+items = (rat_mat.transpose() @ rat_mat).toarray()
+
+items = np.divide(items, np.diag(items).reshape((-1,1)))
+
+np.fill_diagonal(items, 0)
+
+ibcf = pd.DataFrame(items, index = book.id, columns = book.id)
+
+ibcf.iloc[:10,:10]
+
+ibcf = ibcf.assign(closest = ibcf.idxmax(axis = 1), sim = ibcf.max(axis = 1))
+
+# size estimation - mixed data
+def estimate_size(nrow, ncol, out = 'Gb'):
+    out = out.lower()
+    out_dict = {'tb':10**12, 'gb':10**9, 'mb':10**6}
+    return(nrow * ncol * 11 / out_dict[out])
+
+ibcf.__sizeof__() / 2**20 # megabytes
+
+
+ibcf.iloc[ibcf.index.isin(user.book_id), -2:].sort_values('sim')
+
+
