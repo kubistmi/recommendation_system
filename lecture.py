@@ -236,6 +236,59 @@ _ = plt.hist(rats.rating)
 
 rats.groupby('rating').size()
 
+# ratings regression
+rats_reg = rats.loc[:,['book_id', 'rating']].merge(book.iloc[:,:2], left_on = 'book_id', right_on = 'id', suffixes =('_x', '')).drop({'book_id_x', 'id'}, axis = 1).merge(bk_tag_mat, left_on = 'book_id', right_index = True)
+rats_reg.set_index('book_id', inplace = True)
+
+reg_x = rats_reg.drop('rating', axis = 1)
+reg_y = rats_reg.rating
+del(rats_reg)
+
+# ML approach
+sklr_estimate = ols().fit(reg_x, reg_y)
+resid = sklr_estimate.predict(reg_x) - reg_y
+sklr_estimate.coef_
+
+_ = plt.scatter(x = range(reg_x.shape[0]), y = resid, marker = 'o', s = 0.002)
+_ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
+#plt.show()
+
+# STATS approach
+lm_estimate = sm.OLS(reg_y, reg_x).fit()
+lm_estimate.summary()
+
+# LASSO approach
+""" RUN AT OWN RISK!
+lasso = Lasso(random_state=0)
+alphas = np.logspace(-4, -0.5, 30)
+n_folds = 5
+
+tuned_parameters = [{'alpha': alphas}]
+
+cvl = GridSearchCV(lasso, tuned_parameters, cv = n_folds, n_jobs = -1)
+cvl.fit(reg_x, reg_y)
+scores = cvl.cv_results_['mean_test_score']
+scores_std = cvl.cv_results_['std_test_score']
+std_error = scores_std / np.sqrt(n_folds)
+
+plt.semilogx(alphas, scores, color = 'red')
+plt.semilogx(alphas, scores + std_error, 'b--')
+plt.semilogx(alphas, scores - std_error, 'b--')
+
+plt.ylabel('CV score +/- std error')
+plt.xlabel('alpha')
+plt.axhline(np.max(scores), linestyle='--', color='.5')
+plt.xlim([alphas[0], alphas[-1]])
+
+plt.show()
+
+best_lasso = cvl.best_estimator_.fit(reg_x, reg_y).coef_
+"""
+
+best_lasso = Lasso(alpha = 0.00017433288221999874).fit(reg_x, reg_y).coef_
+best_lasso
+del(resid, reg_x, reg_y, best_lasso)
+
 # good and bad ratings
 rats = rats.assign(good = rats.rating == 5).astype(int)
 
