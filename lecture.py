@@ -18,7 +18,6 @@ from sklearn.linear_model import LinearRegression as ols, Lasso
 # STATMODELS
 import statsmodels.api as sm
 
-
 os.listdir('data')
 
 # books
@@ -302,7 +301,8 @@ user = (
 )
 user
 
-user = rats[rats.user_id == user.user_id[0]]
+chosen_user = user.user_id[0]
+user = rats[rats.user_id == chosen_user]
 
 sum(user.good)
 
@@ -340,7 +340,6 @@ other_rat = (
     .rename({'id':'book_id'}, axis = 1)
     .set_index('book_id')
 )
-other_rat.iloc[:10,:10]
 
 # KNN recommendations
 
@@ -369,6 +368,7 @@ acc
 _ = plt.plot(k_arr, acc)
 _ = plt.xticks(k_arr, k_arr)
 #plt.show()
+del(k_arr, acc, tr_x, tr_y, te_x, te_y)
 
 knn = knn_cls(n_neighbors = 3, weights= 'distance', n_jobs= -1)
 knn_trained = knn.fit(user_rat.drop('good', axis = 1), user_rat.good)
@@ -423,7 +423,7 @@ act.merge(
 del(act, pred)
 
 # validate results - to read?
-user_to_read = to_read[to_read.user_id == user.user_id.iloc[0]]
+user_to_read = to_read[to_read.user_id == chosen_user]
 user_to_read.book_id.isin(knn_rec.index).values
 
 # validate results - most frequent?
@@ -465,7 +465,7 @@ bk_pca = (
 )
 
 bk_pca = pd.DataFrame(bk_pca, index = bk_tag_mat.index)
-del(comps, imp_comps, i)
+del(comps, imp_comps, i, x)
 
 # PCA user and other ratings
 user_pca = (
@@ -543,10 +543,10 @@ act.merge(
 del(act, pred)
 
 # PCA validate results - to read?
-user_to_read = to_read[to_read.user_id == user.user_id.iloc[0]]
+user_to_read = to_read[to_read.user_id == chosen_user]
 user_to_read.book_id.isin(knn_rec_pca.index).values
 
-del(bk_pca, user_pca, other_pca, knn_rec_pca)
+del(bk_pca, user_pca, other_pca, knn_rec_pca, user_to_read)
 
 # Collaborative Filtering - item
 
@@ -577,6 +577,10 @@ ibcf = pd.DataFrame(items, index = book.id, columns = book.id)
 ibcf.iloc[:10,:10]
 
 ibcf = ibcf.assign(closest = ibcf.idxmax(axis = 1), sim = ibcf.max(axis = 1))
+ibcf.iloc[:10,-2:]
+
+ibcf.memory_usage()
+ibcf.__sizeof__() / 2**30 # gigabytes
 
 # size estimation - mixed data
 def estimate_size(nrow, ncol, out = 'Gb'):
@@ -584,34 +588,53 @@ def estimate_size(nrow, ncol, out = 'Gb'):
     out_dict = {'tb':10**12, 'gb':10**9, 'mb':10**6}
     return(nrow * ncol * 11 / out_dict[out])
 
-ibcf.__sizeof__() / 2**20 # megabytes
-
-
-ibcf.iloc[ibcf.index.isin(user.book_id), -2:].sort_values('sim')
+estimate_size(10000,10000)
+del(items, ibcf)
 
 # Collaborative Filtering - user
-g = MiniBatchKMeans(n_clusters=20).fit(rat_mat)
-_, counts = np.unique(g.labels_, return_counts  = True)
+kmeans = MiniBatchKMeans(n_clusters=10, batch_size = 5000).fit(rat_mat)
+_, counts = np.unique(kmeans.labels_, return_counts  = True)
 counts
+del(counts, kmeans)
 # ! nah - not really
 
 # SVD decomposition
-
 rat_mat = sparse.csr_matrix((rats.rating, (rats.user_id-1, rats.book_id-1)))
 
-u, s, v = svds(rat_mat.asfptype(), 10)
+u, s, v = sparse.linalg.svds(rat_mat.asfptype(), 10)
+
+# todo: show matrices
 
 ubcf = pd.DataFrame(u, index = range(1, max(rats.user_id)+1))
 
-svd_knn = knn_cls(n_neighbors=5).fit(ubcf[ubcf.index != user.user_id.iloc[0]], ubcf[ubcf.index != user.user_id.iloc[0]].index)
-svd_knn.predict(ubcf[ubcf.index == user.user_id.iloc[0]])
+svd_knn = knn_cls(weights  = 'distance').fit(
+    ubcf[ubcf.index != chosen_user],
+    ubcf[ubcf.index != chosen_user].index
+    )
+svd_knn.kneighbors(ubcf[ubcf.index == chosen_user])
+close_user = svd_knn.predict(ubcf[ubcf.index == chosen_user])
 
-ubcf.loc[[13794, 6634]]
+chosen_rat = rats[rats.user_id == chosen_user]
+close_rat = rats[rats.user_id == close_user[0]]
 
-rats6634 = rats[rats.user_id == 6634]
-rats13794 = rats[rats.user_id == 13794]
+svd_rat = chosen_rat[['book_id', 'rating']].merge(close_rat[['book_id', 'rating']], how = 'outer', left_on = 'book_id', right_on = 'book_id')
 
-rats6634 = rats6634[~rats6634.book_id.isin(rats13794.book_id)]
+val = svd_rat.dropna()
+pred = svd_rat[svd_rat.rating_x.isna()]
 
-rats6634[rats6634.good == 1].merge(book.loc[:,['id', 'title']], left_on = 'book_id', right_on = 'id')
-rats13794[rats13794.good == 1].merge(book.loc[:,['id', 'title']], left_on = 'book_id', right_on = 'id')
+def rmse(predictions, targets):
+    return np.sqrt(((predictions - targets) ** 2).mean())
+
+rmse(val.rating_x, val.rating_y)
+
+def get_book_title(x):
+    global book
+    return(
+        x.merge(
+            book.loc[:,['id', 'title']],
+            left_on = 'book_id',
+            right_on = 'id')
+            )
+
+get_book_title(pred[pred.rating_y == 5])
+get_book_title(svd_rat[svd_rat.rating_x == 5])
