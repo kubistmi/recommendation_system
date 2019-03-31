@@ -6,6 +6,10 @@ import scipy.spatial.distance as dst
 from sklearn.neighbors import KNeighborsClassifier as knn_cls
 from sklearn.model_selection import train_test_split as tts
 from sklearn.decomposition import PCA
+from scipy import sparse
+from sklearn.cluster import MiniBatchKMeans
+from scipy.sparse.linalg import svds
+
 
 os.listdir('data')
 
@@ -485,4 +489,29 @@ ibcf.__sizeof__() / 2**20 # megabytes
 
 ibcf.iloc[ibcf.index.isin(user.book_id), -2:].sort_values('sim')
 
+# Collaborative Filtering - user
+g = MiniBatchKMeans(n_clusters=20).fit(rat_mat)
+_, counts = np.unique(g.labels_, return_counts  = True)
+counts
+# ! nah - not really
 
+# SVD decomposition
+
+rat_mat = sparse.csr_matrix((rats.rating, (rats.user_id-1, rats.book_id-1)))
+
+u, s, v = svds(rat_mat.asfptype(), 10)
+
+ubcf = pd.DataFrame(u, index = range(1, max(rats.user_id)+1))
+
+svd_knn = knn_cls(n_neighbors=5).fit(ubcf[ubcf.index != user.user_id.iloc[0]], ubcf[ubcf.index != user.user_id.iloc[0]].index)
+svd_knn.predict(ubcf[ubcf.index == user.user_id.iloc[0]])
+
+ubcf.loc[[13794, 6634]]
+
+rats6634 = rats[rats.user_id == 6634]
+rats13794 = rats[rats.user_id == 13794]
+
+rats6634 = rats6634[~rats6634.book_id.isin(rats13794.book_id)]
+
+rats6634[rats6634.good == 1].merge(book.loc[:,['id', 'title']], left_on = 'book_id', right_on = 'id')
+rats13794[rats13794.good == 1].merge(book.loc[:,['id', 'title']], left_on = 'book_id', right_on = 'id')
