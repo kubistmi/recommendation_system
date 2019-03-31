@@ -22,12 +22,51 @@ import statsmodels.api as sm
 os.listdir('data')
 
 # books
+"""a simple csv approach - depreciated in favor of API
 book = pd.read_csv('data/books.csv')
 book.head()
+"""
+
+engine = create_engine(
+    'postgresql://{user}:{password}@{host}:{port}/{database}'.format(
+        host= '',
+        port= '5432',
+        database= '',
+        user= '',
+        password= '' 
+        )
+    )
+
+# PYTHON OOP
+conn = engine.connect()
+metadata = MetaData()
+
+books = Table('books', metadata, autoload_with=engine)
+
+query = select([books]).where(books.columns.id == 1)
+print(query)
+
+sql_res = conn.execute(query).fetchmany(5)
+pd.DataFrame(sql_res[:15], columns= sql_res[0].keys())
+conn.close()
+
+# DIRECTLY
+sql_res = engine.execute("SELECT * FROM books").fetchall()
+book = pd.DataFrame(sql_res, columns= sql_res[0].keys())
 
 # book tags
+"""a simple csv approach - depreciated in favor of API
 bk_tags = pd.read_csv('data/book_tags.csv')
 bk_tags.head()
+"""
+
+req = requests.get('http://{host}:8000/tags-all'.format(host = 'localhost'))
+
+req
+req.headers
+req.encoding
+req.json()[:10]
+bk_tags = pd.DataFrame(req.json())
 
 # ratings
 rats = pd.read_csv('data/ratings.csv')
