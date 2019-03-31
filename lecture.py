@@ -2,13 +2,21 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+# API
+import requests
+# SQL
+from sqlalchemy import create_engine, MetaData, Table, select
+# SCIPY
 import scipy.spatial.distance as dst
-from sklearn.neighbors import KNeighborsClassifier as knn_cls
-from sklearn.model_selection import train_test_split as tts
-from sklearn.decomposition import PCA
 from scipy import sparse
+#SKLEARN
+from sklearn.model_selection import train_test_split as tts, KFold, GridSearchCV
+from sklearn.neighbors import KNeighborsClassifier as knn_cls
+from sklearn.decomposition import PCA
 from sklearn.cluster import MiniBatchKMeans
-from scipy.sparse.linalg import svds
+from sklearn.linear_model import LinearRegression as ols, Lasso
+# STATMODELS
+import statsmodels.api as sm
 
 
 os.listdir('data')
