@@ -80,6 +80,8 @@ req.encoding
 req.json()[:10]
 bk_tags = pd.DataFrame(req.json())
 
+del(engine, conn, metadata, books, query, sql_res, req)
+
 # are goodreads_id and book_id the same?
 sum(
     book.book_id.isin(
@@ -87,13 +89,25 @@ sum(
         )
     )
 
+# normalise the IDs
+bk_tags = (
+    bk_tags
+    .merge(
+        book.loc[:,['id', 'book_id']],
+        left_on  = 'goodreads_book_id',
+        right_on = 'book_id'
+        )
+    .drop(['goodreads_book_id', 'book_id'], axis = 1)
+    .rename({'id':'book_id'}, axis = 1)
+)
+
 # find frequent tags
 tg_freq = (
     bk_tags
     .groupby('tag_id')
     .aggregate(
         {'count' : 'sum',
-        'goodreads_book_id': 'size'
+        'book_id': 'size'
         }
     )
 )
@@ -113,27 +127,35 @@ tags100 = (
 del(tg_freq, most_freq)
 
 # remove nonsense
-tags100.query('goodreads_book_id < 1000')
+tags100.query('book_id < 1000')
 
 tags_pat = 'read|own|buy|default|favou?rit|book|library|wish'
-tags100 = tags100[~tags100.tag_name.str.contains(tags_pat)]
-tags100.loc[:,['count', 'goodreads_book_id']].describe()
+tags100 = tags100[(
+    ~tags100
+    .tag_name
+    .str
+    .contains(tags_pat)
+    )]
+
+tags100.loc[:,['count', 'book_id']].describe()
 
 # fancy plots
-_ = plt.hist(tags100.goodreads_book_id, bins = 20)
+_ = plt.hist(tags100.book_id, bins = 20)
 _ = plt.xlabel('# books with given tag')
 _ = plt.ylabel('Frequency')
 #plt.show()
 
-_ = plt.scatter(tags100['count'], tags100.goodreads_book_id)
+_ = plt.scatter(tags100['count'], tags100.book_id)
 #plt.show()
 
 # define table of tag dummies
 bk_tags100 = (
     bk_tags
-    .merge(tags100, on = 'tag_id')
-    .drop({'count_x', 'count_y', 'goodreads_book_id_y'}, axis = 1)
-    .rename({'goodreads_book_id_x': 'goodreads_book_id'}, axis = 1)
+    .merge(
+        tags100.loc[:,['tag_id', 'tag_name']],
+        on = 'tag_id'
+        )
+    .drop({'count'}, axis = 1)
 )
 
 bk_tag_mat = (
@@ -142,7 +164,7 @@ bk_tag_mat = (
     .assign(help = 1)
     .pivot_table(
         values = 'help',
-        index = 'goodreads_book_id',
+        index = 'book_id',
         columns = 'tag_id',
         fill_value = 0)
 )
@@ -157,12 +179,12 @@ tg_per_book = bk_tag_mat.apply(sum, axis = 1)
 tg_per_book.describe()
 
 idx = tg_per_book[tg_per_book == max(tg_per_book)].index.values
-book[book.book_id.isin(idx)].iloc[:,:10]
-bk_tags100.query('goodreads_book_id == @idx[0]')
+book[book.id.isin(idx)].iloc[:,:10]
+bk_tags100.query('book_id == @idx[0]')
 
 del(idx, tg_per_book)
 
-# distance test
+# distance test - curse of sparsity?
 a = bk_tag_mat.iloc[:1000,]
 b = a.dot(a.T)
 (b.apply(np.mean)).describe()
@@ -237,7 +259,11 @@ _ = plt.hist(rats.rating)
 rats.groupby('rating').size()
 
 # ratings regression
-rats_reg = rats.loc[:,['book_id', 'rating']].merge(book.iloc[:,:2], left_on = 'book_id', right_on = 'id', suffixes =('_x', '')).drop({'book_id_x', 'id'}, axis = 1).merge(bk_tag_mat, left_on = 'book_id', right_index = True)
+rats_reg = (
+    rats
+    .loc[:,['book_id', 'rating']]
+    .merge(bk_tag_mat, left_on = 'book_id', right_index = True)
+)
 rats_reg.set_index('book_id', inplace = True)
 
 reg_x = rats_reg.drop('rating', axis = 1)
@@ -248,6 +274,8 @@ del(rats_reg)
 sklr_estimate = ols().fit(reg_x, reg_y)
 resid = sklr_estimate.predict(reg_x) - reg_y
 sklr_estimate.coef_
+
+sklr_estimate.score(reg_x, reg_y)
 
 _ = plt.scatter(x = range(reg_x.shape[0]), y = resid, marker = 'o', s = 0.002)
 _ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
@@ -311,12 +339,8 @@ del(usr_rat)
 
 # prepare tags of books read by user
 user_rat = (
-    user[['book_id', 'good']]
-    .merge(book[['id', 'book_id']], left_on = 'book_id', right_on = 'id')
-    .drop('id', axis = 1)
-    .rename({'book_id_x' : 'book_id', 'book_id_y':'goodreads_book_id'}, axis = 1)
-    .merge(bk_tag_mat, how = 'left', left_on = 'goodreads_book_id', right_index = True)
-    .drop('goodreads_book_id', axis = 1)
+    user[['book_id', 'good']]\
+    .merge(bk_tag_mat, how = 'left', left_on = 'book_id', right_index = True)
     .set_index('book_id')
 )
 user_rat.iloc[:10,:10]
@@ -334,10 +358,10 @@ bk_top = (
 bk_top.head()
 
 other_rat = (
-    book[['id','book_id']]
+    book.loc[:,['id']]
     [book.id.isin(bk_top.index)]
-    .merge(bk_tag_mat, how = 'left', left_on = 'book_id', right_index = True)
-    .drop('book_id', axis = 1)
+    .merge(
+        bk_tag_mat, how = 'left', left_on = 'id', right_index = True)
     .rename({'id':'book_id'}, axis = 1)
     .set_index('book_id')
 )
@@ -390,10 +414,9 @@ knn_rec
 
 # validate results - tags?
 pred = (
-    book
+    book.loc[:,['id']]
     [book.id.isin(knn_rec.index)]
-    [['book_id']]
-    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .merge(bk_tags100, left_on = 'id', right_on = 'book_id')
     .groupby('tag_name')
     [['tag_id']]
     .count()
@@ -403,10 +426,9 @@ pred = (
 )
 
 act = (
-    book
+    book.loc[:,['id']]
     [book.id.isin(user_rat.index)]
-    [['book_id']]
-    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .merge(bk_tags100, left_on = 'id', right_on = 'book_id')
     .groupby('tag_name')
     [['tag_id']]
     .count()
@@ -425,7 +447,12 @@ del(act, pred)
 
 # validate results - to read?
 user_to_read = to_read[to_read.user_id == chosen_user]
-user_to_read.book_id.isin(knn_rec.index).values
+(
+    user_to_read
+    .book_id
+    .isin(knn_rec.index)
+    .values
+)
 
 # validate results - most frequent?
 knn_rec.index.isin(bk_top.index[:20])
@@ -451,6 +478,8 @@ comps = (
     .drop('tag_id', axis = 1)
     .set_index('tag_name')
 )
+comps
+
  # PCA interpret
 for i in range(len(imp_comps)):
     print('PCA' + str(i+1) + '  ' + 20*'#')
@@ -471,20 +500,15 @@ del(comps, imp_comps, i, x)
 # PCA user and other ratings
 user_pca = (
     user[['book_id', 'good']]
-    .merge(book[['id', 'book_id']], left_on = 'book_id', right_on = 'id')
-    .drop('id', axis = 1)
-    .rename({'book_id_x' : 'book_id', 'book_id_y':'goodreads_book_id'}, axis = 1)
-    .merge(bk_pca, how = 'left', left_on = 'goodreads_book_id', right_index = True)
-    .drop('goodreads_book_id', axis = 1)
+    .merge(bk_pca, how = 'left', left_on = 'book_id', right_index = True)
     .set_index('book_id')
 )
 user_pca.head()
 
 other_pca = (
-    book[['id','book_id']]
+    book[['id']]
     [book.id.isin(bk_top.index)]
-    .merge(bk_pca, how = 'left', left_on = 'book_id', right_index = True)
-    .drop('book_id', axis = 1)
+    .merge(bk_pca, how = 'left', left_on = 'id', right_index = True)
     .rename({'id':'book_id'}, axis = 1)
     .set_index('book_id')
 )
@@ -498,8 +522,6 @@ knn_meta = knn_trained.kneighbors(other_pca)
 other_pca['pred'] = knn_trained.predict(other_pca)
 other_pca['dist'] = np.apply_along_axis(np.mean, 1, knn_meta[0])
 
-del(knn, knn_trained, knn_meta)
-
 knn_rec_pca = (
     other_pca
     .query('pred == 1')
@@ -508,12 +530,16 @@ knn_rec_pca = (
 )
 knn_rec_pca
 
+idx = np.where(other_pca.index == 7068)
+knn_meta[0][idx]
+
+del(knn, knn_trained, knn_meta, idx)
+
 # PCA validate results - tags?
 pred = (
-    book
+    book[['id']]
     [book.id.isin(knn_rec_pca.index)]
-    [['book_id']]
-    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .merge(bk_tags100, left_on = 'id', right_on = 'book_id')
     .groupby('tag_name')
     [['tag_id']]
     .count()
@@ -523,10 +549,9 @@ pred = (
 )
 
 act = (
-    book
+    book[['id']]
     [book.id.isin(user_pca.index)]
-    [['book_id']]
-    .merge(bk_tags100, left_on = 'book_id', right_on = 'goodreads_book_id')
+    .merge(bk_tags100, left_on = 'id', right_on = 'book_id')
     .groupby('tag_name')
     [['tag_id']]
     .count()
@@ -536,7 +561,8 @@ act = (
 )
 
 act.merge(
-    pred, how = 'outer',
+    pred, 
+    how = 'outer',
     left_index = True, right_index = True,
     suffixes = ('_act', '_pred')
     )
@@ -545,7 +571,12 @@ del(act, pred)
 
 # PCA validate results - to read?
 user_to_read = to_read[to_read.user_id == chosen_user]
-user_to_read.book_id.isin(knn_rec_pca.index).values
+(
+    user_to_read
+    .book_id
+    .isin(knn_rec_pca.index)
+    .values
+)
 
 del(bk_pca, user_pca, other_pca, knn_rec_pca, user_to_read)
 
@@ -565,6 +596,7 @@ del(bk_pca, user_pca, other_pca, knn_rec_pca, user_to_read)
 rats.book_id.sort_values().drop_duplicates()
 rats.user_id.sort_values().drop_duplicates()
 
+# IBCF
 rat_mat = sparse.csr_matrix((rats.good, (rats.user_id-1, rats.book_id-1)))
 
 items = (rat_mat.transpose() @ rat_mat).toarray()
@@ -584,10 +616,10 @@ ibcf.memory_usage()
 ibcf.__sizeof__() / 2**30 # gigabytes
 
 # size estimation - mixed data
-def estimate_size(nrow, ncol, out = 'Gb'):
+def estimate_size(nrow, ncol, out = 'Gb', magic = 11):
     out = out.lower()
     out_dict = {'tb':10**12, 'gb':10**9, 'mb':10**6}
-    return(nrow * ncol * 11 / out_dict[out])
+    return(nrow * ncol * magic / out_dict[out])
 
 estimate_size(10000,10000)
 del(items, ibcf)
@@ -604,8 +636,17 @@ rat_mat = sparse.csr_matrix((rats.rating, (rats.user_id-1, rats.book_id-1)))
 
 u, s, v = sparse.linalg.svds(rat_mat.asfptype(), 10)
 
-# todo: show matrices
+# SVD matrices
+u.shape
+pd.DataFrame(u).iloc[:10,:10]
 
+s.shape
+pd.DataFrame(s).head()
+
+v.shape
+pd.DataFrame(v).iloc[:10,:10]
+
+# UBCF
 ubcf = pd.DataFrame(u, index = range(1, max(rats.user_id)+1))
 
 svd_knn = knn_cls(weights  = 'distance').fit(
