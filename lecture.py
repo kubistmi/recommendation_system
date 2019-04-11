@@ -20,6 +20,18 @@ import statsmodels.api as sm
 
 os.listdir('data')
 
+# ratings
+rats = pd.read_csv('data/ratings.csv')
+rats.head()
+
+# tags
+tags = pd.read_csv('data/tags.csv')
+tags.head()
+
+# to read
+to_read = pd.read_csv('data/to_read.csv')
+to_read.head()
+
 # books
 """a simple csv approach - depreciated in favor of API
 book = pd.read_csv('data/books.csv')
@@ -52,6 +64,7 @@ conn.close()
 # DIRECTLY
 sql_res = engine.execute("SELECT * FROM books").fetchall()
 book = pd.DataFrame(sql_res, columns= sql_res[0].keys())
+book.head()
 
 # book tags
 """a simple csv approach - depreciated in favor of API
@@ -60,24 +73,12 @@ bk_tags.head()
 """
 
 req = requests.get('http://{host}:8000/tags-all'.format(host = 'localhost'))
-
 req
 req.headers
 req.encoding
+
 req.json()[:10]
 bk_tags = pd.DataFrame(req.json())
-
-# ratings
-rats = pd.read_csv('data/ratings.csv')
-rats.head()
-
-# tags
-tags = pd.read_csv('data/tags.csv')
-tags.head()
-
-# to read
-to_read = pd.read_csv('data/to_read.csv')
-to_read.head()
 
 # are goodreads_id and book_id the same?
 sum(
