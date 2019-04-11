@@ -79,6 +79,7 @@ req.encoding
 
 req.json()[:10]
 bk_tags = pd.DataFrame(req.json())
+bk_tags.goodreads_book_id = bk_tags.goodreads_book_id.astype('int64')
 
 del(engine, conn, metadata, books, query, sql_res, req)
 
@@ -130,12 +131,9 @@ del(tg_freq, most_freq)
 tags100.query('book_id < 1000')
 
 tags_pat = 'read|own|buy|default|favou?rit|book|library|wish'
-tags100 = tags100[(
-    ~tags100
-    .tag_name
-    .str
-    .contains(tags_pat)
-    )]
+tags100 = tags100[
+    ~tags100.tag_name.str.contains(tags_pat)
+    ]
 
 tags100.loc[:,['count', 'book_id']].describe()
 
@@ -183,24 +181,6 @@ book[book.id.isin(idx)].iloc[:,:10]
 bk_tags100.query('book_id == @idx[0]')
 
 del(idx, tg_per_book)
-
-# distance test - curse of sparsity?
-a = bk_tag_mat.iloc[:1000,]
-b = a.dot(a.T)
-(b.apply(np.mean)).describe()
-
-one = np.zeros(69)
-one[:17] = 1
-
-two = np.zeros(69)
-two[9:26] = 1
-
-np.linalg.norm(one - two)
-np.sqrt(np.linalg.norm(one)**2 + np.linalg.norm(two)**2)
-
-dst.cosine(one, two)
-
-del(a, b, one, two)
 
 # ratings frequency
 rats.user_id.drop_duplicates().count()
@@ -258,7 +238,7 @@ _ = plt.hist(rats.rating)
 
 rats.groupby('rating').size()
 
-# ratings regression
+# Ratings regression
 rats_reg = (
     rats
     .loc[:,['book_id', 'rating']]
@@ -316,6 +296,26 @@ best_lasso = cvl.best_estimator_.fit(reg_x, reg_y).coef_
 best_lasso = Lasso(alpha = 0.00017433288221999874).fit(reg_x, reg_y).coef_
 best_lasso
 del(resid, reg_x, reg_y, best_lasso)
+
+# Start of Recommendations!
+
+# distance test - curse of sparsity?
+a = bk_tag_mat.iloc[:1000,]
+b = a.dot(a.T)
+(b.apply(np.mean)).describe()
+
+one = np.zeros(69)
+one[:17] = 1
+
+two = np.zeros(69)
+two[9:26] = 1
+
+np.linalg.norm(one - two)
+np.sqrt(np.linalg.norm(one)**2 + np.linalg.norm(two)**2)
+
+dst.cosine(one, two)
+
+del(a, b, one, two)
 
 # good and bad ratings
 rats = rats.assign(good = rats.rating == 5).astype(int)
