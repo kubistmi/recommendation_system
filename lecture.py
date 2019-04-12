@@ -637,10 +637,19 @@ estimate_size(10000,10000)
 del(items, ibcf)
 
 # Collaborative Filtering - user
+# clustering?
 kmeans = MiniBatchKMeans(n_clusters=10, batch_size = 5000).fit(rat_mat)
 _, counts = np.unique(kmeans.labels_, return_counts  = True)
 counts
 del(counts, kmeans)
+
+withinss = [
+    MiniBatchKMeans(n_clusters=i, batch_size = 5000).fit(rat_mat).inertia_
+    for i in range(1, 11)
+]
+
+plt.plot(range(1, 11), withinss)
+plt.show()
 # ! nah - not really
 
 # SVD decomposition
