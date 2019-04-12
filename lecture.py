@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, MetaData, Table, select
 import scipy.spatial.distance as dst
 from scipy import sparse
 #SKLEARN
-from sklearn.model_selection import train_test_split as tts, KFold, GridSearchCV
+from sklearn.model_selection import train_test_split as tts, GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier as knn_cls
 from sklearn.decomposition import PCA
 from sklearn.cluster import MiniBatchKMeans
@@ -649,7 +649,7 @@ withinss = [
 ]
 
 plt.plot(range(1, 11), withinss)
-plt.show()
+#plt.show()
 # ! nah - not really
 
 # SVD decomposition
@@ -680,7 +680,15 @@ close_user = svd_knn.predict(ubcf[ubcf.index == chosen_user])
 chosen_rat = rats[rats.user_id == chosen_user]
 close_rat = rats[rats.user_id == close_user[0]]
 
-svd_rat = chosen_rat[['book_id', 'rating']].merge(close_rat[['book_id', 'rating']], how = 'outer', left_on = 'book_id', right_on = 'book_id')
+svd_rat = (
+    chosen_rat[['book_id', 'rating']]
+    .merge(
+        close_rat[['book_id', 'rating']],
+        how = 'outer',
+        left_on = 'book_id',
+        right_on = 'book_id'
+        )
+    )
 
 val = svd_rat.dropna()
 pred = svd_rat[svd_rat.rating_x.isna()]
