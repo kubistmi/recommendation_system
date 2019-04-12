@@ -38,15 +38,17 @@ book = pd.read_csv('data/books.csv')
 book.head()
 """
 
+sql = pd.read_csv('connection/sql.txt', sep = ':', header = None, index_col = 0)
 engine = create_engine(
     'postgresql://{user}:{password}@{host}:{port}/{database}'.format(
-        host= '',
+        host= sql.loc['host', 1],
         port= '5432',
-        database= '',
-        user= '',
-        password= '' 
+        database= sql.loc['database', 1],
+        user= sql.loc['user', 1],
+        password= sql.loc['password', 1] 
         )
     )
+
 
 # PYTHON OOP
 conn = engine.connect()
@@ -72,7 +74,16 @@ bk_tags = pd.read_csv('data/book_tags.csv')
 bk_tags.head()
 """
 
-req = requests.get('http://{host}:8000/tags-all'.format(host = 'localhost'))
+api = pd.read_csv('connection/api.txt', sep = ':', header = None, index_col = 0)
+
+req = requests.get(
+    'http://{host}:{port}/{endpoint}'.format(
+        host = api.loc['host', 1],
+        port = api.loc['port', 1],
+        endpoint = 'tags-all'
+        )
+    )
+
 req
 req.headers
 req.encoding
@@ -80,6 +91,7 @@ req.encoding
 req.json()[:10]
 bk_tags = pd.DataFrame(req.json())
 bk_tags.goodreads_book_id = bk_tags.goodreads_book_id.astype('int64')
+bk_tags.tag_id = bk_tags.tag_id.astype('int64')
 
 del(engine, conn, metadata, books, query, sql_res, req)
 
@@ -114,14 +126,14 @@ tg_freq = (
 )
 
 most_freq = (
-    tg_freq
+    tg_freq 
     .sort_values('count', ascending = False)
     .iloc[:100,:]
 )
 
 tags100 = (
     tags    
-    .merge(most_freq, left_index= True, right_index = True)
+    .merge(most_freq, left_on = 'tag_id', right_index = True)
     .sort_values('count', ascending = False)
 )
 
@@ -232,11 +244,10 @@ del(max_rat, rat_dup)
 
 # rating distribution
 rats.rating.describe()
+rats.groupby('rating').size()
 
 _ = plt.hist(rats.rating)
 #plt.show()
-
-rats.groupby('rating').size()
 
 # Ratings regression
 rats_reg = (
@@ -264,6 +275,7 @@ _ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
 # STATS approach
 lm_estimate = sm.OLS(reg_y, reg_x).fit()
 lm_estimate.summary()
+lm_estimate.resid
 
 # LASSO approach
 """ RUN AT OWN RISK!
