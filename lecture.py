@@ -18,6 +18,9 @@ from sklearn.linear_model import LinearRegression as ols, Lasso
 # STATMODELS
 import statsmodels.api as sm
 
+######################################
+### Loading and minor reformatting ###
+######################################
 os.listdir('data')
 
 # ratings
@@ -113,6 +116,10 @@ bk_tags = (
     .rename({'id':'book_id'}, axis = 1)
 )
 
+################################
+### Book tags transformation ###
+################################
+
 # find frequent tags
 tg_freq = (
     bk_tags
@@ -124,12 +131,14 @@ tg_freq = (
     )
 )
 
+# 100 most frequent tags
 most_freq = (
     tg_freq 
     .sort_values('count', ascending = False)
     .iloc[:100,:]
 )
 
+# add tag names
 tags100 = (
     tags    
     .merge(most_freq, left_on = 'tag_id', right_index = True)
@@ -148,16 +157,18 @@ tags100 = tags100[
 
 tags100.loc[:,['count', 'book_id']].describe()
 
-# fancy plots
+# fancy plot
 _ = plt.hist(tags100.book_id, bins = 20)
 _ = plt.xlabel('# books with given tag')
 _ = plt.ylabel('Frequency')
-#plt.show()
+plt.show()
 
+# not so fancy plot
 _ = plt.scatter(tags100['count'], tags100.book_id)
-#plt.show()
+plt.show()
 
 # define table of tag dummies
+# start with filtering join
 bk_tags100 = (
     bk_tags
     .merge(
@@ -167,6 +178,7 @@ bk_tags100 = (
     .drop({'count'}, axis = 1)
 )
 
+# long-to-wide transformation
 bk_tag_mat = (
     bk_tags100
     .drop('tag_name', axis = 1)
@@ -193,9 +205,14 @@ bk_tags100.query('book_id == @idx[0]')
 
 del(idx, tg_per_book)
 
+##########################
+### Rating exploration ###
+##########################
+
 # ratings frequency
 rats.user_id.drop_duplicates().count()
 
+# how many times user rate books?
 usr_rat = (
     rats
     .groupby('user_id')
@@ -211,15 +228,16 @@ _ = plt.scatter(x = usr_rat.index, y = usr_rat.ratings)
 _ = plt.xlabel('Users')
 _ = plt.ylabel('# ratings per user')
 _ = plt.hlines(usr_rat.ratings.mean(), 0, 55000)
-#plt.show()
+plt.show()
 
-# one user one book, more ratings?
+# are there more ratings of book made by a single user? 
 rat_dup = (
         rats
         .groupby(['user_id', 'book_id'])
         .size()
 )
 
+# find duplicated ratings
 rat_dup = (
     rat_dup
     [rat_dup>1]
@@ -229,9 +247,13 @@ rat_dup = (
 )
 rat_dup.head()
 
+# rewrite with the maximum rating
+#   - we do not have any information about which is more appropriate
+#   - in production -> delete, if you have enough data
 max_rat = rats.groupby(['book_id', 'user_id']).rating.transform(max)
 rats = rats.loc[rats.rating == max_rat].drop_duplicates()
 
+# check if we managed to catch all duplicates
 sum(
     rats
     .groupby(['user_id', 'book_id'])
@@ -246,9 +268,13 @@ rats.rating.describe()
 rats.groupby('rating').size()
 
 _ = plt.hist(rats.rating)
-#plt.show()
+plt.show()
 
-# Ratings regression
+###########################
+### Regression ratings  ###
+###########################
+
+# put tags dummies and book rating together
 rats_reg = (
     rats
     .loc[:,['book_id', 'rating']]
@@ -256,38 +282,43 @@ rats_reg = (
 )
 rats_reg.set_index('book_id', inplace = True)
 
+# split regressor and regressand
 reg_x = rats_reg.drop('rating', axis = 1)
 reg_y = rats_reg.rating
 del(rats_reg)
 
 # ML approach
 sklr_estimate = ols().fit(reg_x, reg_y)
-resid = reg_y - sklr_estimate.predict(reg_x)
-len(sklr_estimate.coef_
+resid = reg_y - sklr_estimate.predict(reg_x) # residuals
+sklr_estimate.coef_[:5]                      # few coefficients
 
-sklr_estimate.score(reg_x, reg_y)
+sklr_estimate.score(reg_x, reg_y)            # R^2
 
+# plot residuals
 _ = plt.scatter(x = range(reg_x.shape[0]), y = resid, marker = 'o', s = 0.002)
 _ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
-_ = plt.ylim((-6,4))
 plt.show()
 
 # STATS approach
 reg_x_sm = sm.add_constant(reg_x)
 lm_estimate = sm.OLS(reg_y, reg_x_sm).fit()
-lm_estimate.summary()
-lm_estimate.params.iloc[:2]
-lm_estimate.resid
 
+# show results
+lm_estimate.summary()
+lm_estimate.resid
+lm_estimate.params.iloc[:2]
+
+# what would be the predicted rating for book 18? 
 lm_estimate.predict(reg_x_sm.loc[18]).drop_duplicates()
 reg_y.loc[18].describe()
 
+# plot residuals
 _ = plt.scatter(x = range(reg_x.shape[0]), y = lm_estimate.resid, marker = 'o', s = 0.002)
 _ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
 plt.show()
 
 # LASSO approach
-""" RUN AT OWN RISK!
+""" RUN AT OWN RISK! TAKES AGES!
 lasso = Lasso(random_state=0)
 alphas = np.logspace(-4, -0.5, 30)
 n_folds = 5
@@ -314,26 +345,33 @@ plt.show()
 best_lasso = cvl.best_estimator_.fit(reg_x, reg_y).coef_
 """
 
+# the crazy number is result of the CROSS-VALIDATION above
 best_lasso = Lasso(alpha = 0.00017433288221999874).fit(reg_x, reg_y).coef_
 best_lasso
 del(resid, reg_x, reg_y, best_lasso)
 
-# Start of Recommendations!
+#############################
+### Recommendation intro  ###
+#############################
 
 # distance test - curse of sparsity?
 a = bk_tag_mat.iloc[:1000,]
 b = a.dot(a.T)
 (b.apply(np.mean)).describe()
 
+# mock the acutal book_tags (based on previous summaries)
+#   - book one
 one = np.zeros(69)
 one[:17] = 1
 
+#   - book two
 two = np.zeros(69)
 two[9:26] = 1
-
+#   - whats the euclidean distance?
 np.linalg.norm(one - two)
+#   - and the limit of the distance (very close)
 np.sqrt(np.linalg.norm(one)**2 + np.linalg.norm(two)**2)
-
+#   - and how about cosine distance?
 dst.cosine(one, two)
 
 del(a, b, one, two)
@@ -351,9 +389,11 @@ user = (
 )
 user
 
+# saving user ID and it's ratings
 chosen_user = user.user_id[0]
 user = rats[rats.user_id == chosen_user]
 
+# how many good ratings?
 sum(user.good)
 
 del(usr_rat)
@@ -390,9 +430,11 @@ other_rat = (
     .set_index('book_id')
 )
 
-# KNN recommendations
+############################
+### kNN recommendations  ###
+############################
 
-# validated k
+# train test split
 tr_x, te_x, tr_y, te_y = tts(
     user_rat.drop('good', axis = 1),
     user_rat.good,
@@ -400,6 +442,7 @@ tr_x, te_x, tr_y, te_y = tts(
     random_state = 12345
     )
 
+# validate k
 def knn_train(k):
     global tr_x, tr_y, te_x, te_y
     pred = (
@@ -409,25 +452,30 @@ def knn_train(k):
     )
     return(pred)
 
-# show accuracy
+# validate
 k_arr = range(1,20)
 acc = [knn_train(i) for i in k_arr]
 acc
 
+# plot accuracy
 _ = plt.plot(k_arr, acc)
 _ = plt.xticks(k_arr, k_arr)
 plt.show()
 del(k_arr, acc, tr_x, tr_y, te_x, te_y)
 
+# re-train the best model and save metadata
 knn = knn_cls(n_neighbors = 2, weights= 'distance', n_jobs= -1)
 knn_trained = knn.fit(user_rat.drop('good', axis = 1), user_rat.good)
 knn_meta = knn_trained.kneighbors(other_rat)
 
+# assign the prediction and distance (proxy to confidence)
 other_rat['pred'] = knn_trained.predict(other_rat)
 other_rat['dist'] = np.apply_along_axis(np.mean, 1, knn_meta[0])
 
 del(knn, knn_trained, knn_meta)
 
+# check only the books with predicted rating == `good`
+#   - among them, find the closest
 knn_rec = (
     other_rat
     .query('pred == 1')
@@ -436,9 +484,10 @@ knn_rec = (
 )
 knn_rec
 
+# add book titles
 knn_rec.merge(book.loc[:,['id', 'title']], left_index = True, right_on = 'id')
 
-# validate results - tags?
+# validate results - tags of read books and recommended books
 pred = (
     book.loc[:,['id']]
     [book.id.isin(knn_rec.index)]
@@ -471,7 +520,7 @@ act.merge(
 
 del(act, pred)
 
-# validate results - to read?
+# validate results - are recommended books in to_read list?
 user_to_read = to_read[to_read.user_id == chosen_user]
 (
     user_to_read
@@ -480,24 +529,28 @@ user_to_read = to_read[to_read.user_id == chosen_user]
     .values
 )
 
-# validate results - most frequent?
+# validate results - are recommended books among most frequent?
 knn_rec.index.isin(bk_top.index[:100])
 del(user_rat, other_rat)
 
-# PCA
+#####################
+### including PCA ###
+#####################
 pca = PCA().fit(bk_tag_mat)
 
+# variance explained by subset of variables
 _ = plt.plot(pca.explained_variance_ratio_, marker = 'x')
 plt.show()
 
+# save components capturing at least 0.015 of total variance
 imp_comps = [i for i in pca.explained_variance_ratio_ if i > 0.015]
 comps = pd.DataFrame(pca.components_).T
-
 comps.set_index(bk_tag_mat.columns, inplace = True)
 comps.iloc[:10, :10]
 
 comps = comps.iloc[:, :len(imp_comps)]
 
+# match component values and tag_names
 comps = (
     tags
     .merge(comps, left_on = 'tag_id', right_index = True)
@@ -506,14 +559,14 @@ comps = (
 )
 comps.head()
 
- # PCA interpret
+# interpret components
 for i in range(len(imp_comps)):
     print('PCA' + str(i+1) + '  ' + 20*'#')
     x = comps.loc[:,i]
     x = x.reindex(x.abs().sort_values(ascending = False).index)[:5]
     print(x)
 
-# PCA transform
+# transform using components
 bk_pca = (
     PCA(n_components = len(imp_comps))
     .fit(bk_tag_mat)
@@ -523,7 +576,7 @@ bk_pca = (
 bk_pca = pd.DataFrame(bk_pca, index = bk_tag_mat.index)
 del(comps, imp_comps, i, x)
 
-# PCA user and other ratings
+# split our user ratings and rating of other users
 user_pca = (
     user[['book_id', 'good']]
     .merge(bk_pca, how = 'left', left_on = 'book_id', right_index = True)
@@ -540,7 +593,7 @@ other_pca = (
 )
 other_pca.head()
 
-# PCA KNN
+# run the kNN once again
 tr_x, te_x, tr_y, te_y = tts(
     user_pca.drop('good', axis = 1),
     user_pca.good,
@@ -571,15 +624,12 @@ knn_rec_pca = (
 )
 knn_rec_pca
 
-idx = np.where(other_pca.index == 2840)
-knn_meta[0][idx]
-knn_meta[1][idx]
-
 del(knn, knn_trained, knn_meta, idx)
 
+# add book titles
 knn_rec_pca.merge(book.loc[:,['id', 'title']], left_index = True, right_on = 'id')
 
-# PCA validate results - tags?
+# validate results - tags of read books and recommended books
 pred = (
     book[['id']]
     [book.id.isin(knn_rec_pca.index)]
@@ -613,7 +663,7 @@ act.merge(
 
 del(act, pred)
 
-# PCA validate results - to read?
+# validate results - are recommended books in to_read list?
 user_to_read = to_read[to_read.user_id == chosen_user]
 (
     user_to_read
@@ -624,17 +674,20 @@ user_to_read = to_read[to_read.user_id == chosen_user]
 
 del(bk_pca, user_pca, other_pca, knn_rec_pca, user_to_read)
 
-# Collaborative Filtering - item
-
-# rat_mat = (
-#     rats
-#     [['book_id', 'user_id', 'good']]
-#     .pivot_table(
-#         values = 'good',
-#         index = 'user_id',
-#         columns = 'book_id',
-#         fill_value = np.nan)
-# )
+######################################
+### Collaborative Filtering - ITEM ###
+######################################
+""" NOT GONNA WORK (TOO LARGE)
+rat_mat = (
+    rats
+    [['book_id', 'user_id', 'good']]
+    .pivot_table(
+        values = 'good',
+        index = 'user_id',
+        columns = 'book_id',
+        fill_value = np.nan)
+)
+"""
 
 # check IDs
 sum(rats.book_id.sort_values().drop_duplicates() == range(1,10001))
@@ -642,22 +695,25 @@ rats.user_id.sort_values().drop_duplicates()
 
 # IBCF
 rat_mat = sparse.csr_matrix((rats.good, (rats.user_id-1, rats.book_id-1)))
-
 items = (rat_mat.transpose() @ rat_mat).toarray()
 
+# divide by the number of user ratings 
 items = np.divide(items, np.diag(items).reshape((-1,1)))
 
+# delete diagonal
 np.fill_diagonal(items, 0)
 
+# save into DF
 ibcf = pd.DataFrame(items, index = book.id, columns = book.id)
-
 ibcf.iloc[:5,:10]
 
+# assign the closest books and the similarity
 ibcf = ibcf.assign(closest = ibcf.idxmax(axis = 1), sim = ibcf.max(axis = 1))
 ibcf.iloc[:5,-2:]
 
 ibcf.iloc[1428,:-2].sort_values(ascending = False).head()
 
+# join to book read by our user
 user_ibcf = (
     user
     .query('good == 1')
@@ -669,21 +725,29 @@ user_ibcf = (
 )
 user_ibcf.sort_values('sim', ascending = False).head()
 
+# similar books?
 book[book.id.isin([1411, 1428])].loc[:, ['id','title']]
 
-ibcf.memory_usage()
-ibcf.__sizeof__() / 2**30 # gigabytes
+###############################
+### Sizing ROUGH estimation ###
+###############################
+ibcf.memory_usage()       # real per-column
+ibcf.__sizeof__() / 2**30 # real total
 
-# size estimation - mixed data
+# size estimation - works for mixed data
 def estimate_size(nrow, ncol, out = 'Gb', magic = 11):
     out = out.lower()
     out_dict = {'tb':10**12, 'gb':10**9, 'mb':10**6}
     return(nrow * ncol * magic / out_dict[out])
 
-estimate_size(10000,10000)
+estimate_size(10000,10000) # not that far
 del(items, ibcf)
 
-# Collaborative Filtering - user
+######################################
+### Collaborative Filtering - USER ###
+######################################
+
+#----- DATA IS TOO BIG! WHAT TO DO NOW?
 # clustering?
 kmeans = MiniBatchKMeans(n_clusters=3, batch_size = 5000).fit(rat_mat)
 _, counts = np.unique(kmeans.labels_, return_counts  = True)
@@ -696,12 +760,10 @@ withinss = [
 ]
 
 plt.plot(range(1, 11), withinss)
-#plt.show()
-# ! nah - not really
+plt.show()
+# not really - heavily imbalanced classes
 
-# SVD decomposition
-#rat_mat = sparse.csr_matrix((rats.rating, (rats.user_id-1, rats.book_id-1)))
-
+#----- SVD decomposition
 u, s, v = sparse.linalg.svds(rat_mat.asfptype(), 10)
 
 # SVD matrices
@@ -714,14 +776,18 @@ pd.DataFrame(s)
 v.shape
 pd.DataFrame(v).iloc[:10,:10]
 
-# UBCF
+################################################
+### Collaborative Filtering - SVD based USER ###
+################################################
 ubcf = pd.DataFrame(u, index = range(1, max(rats.user_id)+1))
 
+# run a simple kNN
 svd_knn = knn_cls(weights  = 'distance').fit(
     ubcf[ubcf.index != chosen_user],
     ubcf[ubcf.index != chosen_user].index
     )
 
+# save predictions
 svd_knn.kneighbors(ubcf[ubcf.index == chosen_user])
 close_user = svd_knn.predict(ubcf[ubcf.index == chosen_user])
 
@@ -738,7 +804,10 @@ svd_rat = (
         )
     )
 
+# validate
 val = svd_rat.dropna()
+
+# recommended
 pred = svd_rat[svd_rat.rating_x.isna()]
 
 def rmse(predictions, targets):
