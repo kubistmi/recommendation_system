@@ -40,7 +40,8 @@ book.head()
 
 sql = pd.read_csv('connection/sql.txt', sep = ':', header = None, index_col = 0)
 engine = create_engine(
-    'postgresql://{user}:{password}@{host}:{port}/{database}'.format(
+    '{type}://{user}:{password}@{host}:{port}/{database}'.format(
+        type='postgresql',
         host= sql.loc['host', 1],
         port= '5432',
         database= sql.loc['database', 1],
@@ -48,8 +49,6 @@ engine = create_engine(
         password= sql.loc['password', 1] 
         )
     )
-
-
 # PYTHON OOP
 conn = engine.connect()
 metadata = MetaData()
@@ -79,7 +78,7 @@ api = pd.read_csv('connection/api.txt', sep = ':', header = None, index_col = 0)
 req = requests.get(
     'http://{host}:{port}/{endpoint}'.format(
         host = api.loc['host', 1],
-        port = api.loc['port', 1],
+        port = '',
         endpoint = 'tags-all'
         )
     )
@@ -263,19 +262,29 @@ del(rats_reg)
 
 # ML approach
 sklr_estimate = ols().fit(reg_x, reg_y)
-resid = sklr_estimate.predict(reg_x) - reg_y
-sklr_estimate.coef_
+resid = reg_y - sklr_estimate.predict(reg_x)
+len(sklr_estimate.coef_
 
 sklr_estimate.score(reg_x, reg_y)
 
 _ = plt.scatter(x = range(reg_x.shape[0]), y = resid, marker = 'o', s = 0.002)
 _ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
-#plt.show()
+_ = plt.ylim((-6,4))
+plt.show()
 
 # STATS approach
-lm_estimate = sm.OLS(reg_y, reg_x).fit()
+reg_x_sm = sm.add_constant(reg_x)
+lm_estimate = sm.OLS(reg_y, reg_x_sm).fit()
 lm_estimate.summary()
+lm_estimate.params.iloc[:2]
 lm_estimate.resid
+
+lm_estimate.predict(reg_x_sm.loc[18]).drop_duplicates()
+reg_y.loc[18].describe()
+
+_ = plt.scatter(x = range(reg_x.shape[0]), y = lm_estimate.resid, marker = 'o', s = 0.002)
+_ = plt.hlines(y = 0, xmin = 0, xmax = 1000000)
+plt.show()
 
 # LASSO approach
 """ RUN AT OWN RISK!
@@ -373,7 +382,10 @@ other_rat = (
     book.loc[:,['id']]
     [book.id.isin(bk_top.index)]
     .merge(
-        bk_tag_mat, how = 'left', left_on = 'id', right_index = True)
+        bk_tag_mat,
+        how = 'left',
+        left_on = 'id',
+        right_index = True)
     .rename({'id':'book_id'}, axis = 1)
     .set_index('book_id')
 )
@@ -404,10 +416,10 @@ acc
 
 _ = plt.plot(k_arr, acc)
 _ = plt.xticks(k_arr, k_arr)
-#plt.show()
+plt.show()
 del(k_arr, acc, tr_x, tr_y, te_x, te_y)
 
-knn = knn_cls(n_neighbors = 3, weights= 'distance', n_jobs= -1)
+knn = knn_cls(n_neighbors = 2, weights= 'distance', n_jobs= -1)
 knn_trained = knn.fit(user_rat.drop('good', axis = 1), user_rat.good)
 knn_meta = knn_trained.kneighbors(other_rat)
 
@@ -423,6 +435,8 @@ knn_rec = (
     .iloc[:10, -2:]
 )
 knn_rec
+
+knn_rec.merge(book.loc[:,['id', 'title']], left_index = True, right_on = 'id')
 
 # validate results - tags?
 pred = (
@@ -467,14 +481,14 @@ user_to_read = to_read[to_read.user_id == chosen_user]
 )
 
 # validate results - most frequent?
-knn_rec.index.isin(bk_top.index[:20])
+knn_rec.index.isin(bk_top.index[:100])
 del(user_rat, other_rat)
 
 # PCA
 pca = PCA().fit(bk_tag_mat)
 
 _ = plt.plot(pca.explained_variance_ratio_, marker = 'x')
-#plt.show()
+plt.show()
 
 imp_comps = [i for i in pca.explained_variance_ratio_ if i > 0.015]
 comps = pd.DataFrame(pca.components_).T
@@ -490,12 +504,12 @@ comps = (
     .drop('tag_id', axis = 1)
     .set_index('tag_name')
 )
-comps
+comps.head()
 
  # PCA interpret
 for i in range(len(imp_comps)):
     print('PCA' + str(i+1) + '  ' + 20*'#')
-    x = comps[i]
+    x = comps.loc[:,i]
     x = x.reindex(x.abs().sort_values(ascending = False).index)[:5]
     print(x)
 
@@ -527,7 +541,22 @@ other_pca = (
 other_pca.head()
 
 # PCA KNN
-knn = knn_cls(weights = 'distance', n_jobs = -1)
+tr_x, te_x, tr_y, te_y = tts(
+    user_pca.drop('good', axis = 1),
+    user_pca.good,
+    test_size = 0.2,
+    random_state = 1234
+    )
+
+k_arr = range(1,20)
+acc = [knn_train(i) for i in k_arr]
+acc
+
+_ = plt.plot(k_arr, acc)
+_ = plt.xticks(k_arr, k_arr)
+plt.show()
+
+knn = knn_cls(n_neighbors = 2, weights = 'distance', n_jobs = -1)
 knn_trained = knn.fit(user_pca.drop('good', axis = 1), user_pca.good)
 knn_meta = knn_trained.kneighbors(other_pca)
 
@@ -542,10 +571,13 @@ knn_rec_pca = (
 )
 knn_rec_pca
 
-idx = np.where(other_pca.index == 7068)
+idx = np.where(other_pca.index == 2840)
 knn_meta[0][idx]
+knn_meta[1][idx]
 
 del(knn, knn_trained, knn_meta, idx)
+
+knn_rec_pca.merge(book.loc[:,['id', 'title']], left_index = True, right_on = 'id')
 
 # PCA validate results - tags?
 pred = (
@@ -605,7 +637,7 @@ del(bk_pca, user_pca, other_pca, knn_rec_pca, user_to_read)
 # )
 
 # check IDs
-rats.book_id.sort_values().drop_duplicates()
+sum(rats.book_id.sort_values().drop_duplicates() == range(1,10001))
 rats.user_id.sort_values().drop_duplicates()
 
 # IBCF
@@ -619,10 +651,25 @@ np.fill_diagonal(items, 0)
 
 ibcf = pd.DataFrame(items, index = book.id, columns = book.id)
 
-ibcf.iloc[:10,:10]
+ibcf.iloc[:5,:10]
 
 ibcf = ibcf.assign(closest = ibcf.idxmax(axis = 1), sim = ibcf.max(axis = 1))
-ibcf.iloc[:10,-2:]
+ibcf.iloc[:5,-2:]
+
+ibcf.iloc[1428,:-2].sort_values(ascending = False).head()
+
+user_ibcf = (
+    user
+    .query('good == 1')
+    .loc[:,['book_id']]
+    .merge(
+        ibcf.iloc[:,-2:],
+        left_on = 'book_id',
+        right_index = True )
+)
+user_ibcf.sort_values('sim', ascending = False).head()
+
+book[book.id.isin([1411, 1428])].loc[:, ['id','title']]
 
 ibcf.memory_usage()
 ibcf.__sizeof__() / 2**30 # gigabytes
@@ -638,7 +685,7 @@ del(items, ibcf)
 
 # Collaborative Filtering - user
 # clustering?
-kmeans = MiniBatchKMeans(n_clusters=10, batch_size = 5000).fit(rat_mat)
+kmeans = MiniBatchKMeans(n_clusters=3, batch_size = 5000).fit(rat_mat)
 _, counts = np.unique(kmeans.labels_, return_counts  = True)
 counts
 del(counts, kmeans)
@@ -653,7 +700,7 @@ plt.plot(range(1, 11), withinss)
 # ! nah - not really
 
 # SVD decomposition
-rat_mat = sparse.csr_matrix((rats.rating, (rats.user_id-1, rats.book_id-1)))
+#rat_mat = sparse.csr_matrix((rats.rating, (rats.user_id-1, rats.book_id-1)))
 
 u, s, v = sparse.linalg.svds(rat_mat.asfptype(), 10)
 
@@ -662,7 +709,7 @@ u.shape
 pd.DataFrame(u).iloc[:10,:10]
 
 s.shape
-pd.DataFrame(s).head()
+pd.DataFrame(s)
 
 v.shape
 pd.DataFrame(v).iloc[:10,:10]
@@ -674,6 +721,7 @@ svd_knn = knn_cls(weights  = 'distance').fit(
     ubcf[ubcf.index != chosen_user],
     ubcf[ubcf.index != chosen_user].index
     )
+
 svd_knn.kneighbors(ubcf[ubcf.index == chosen_user])
 close_user = svd_knn.predict(ubcf[ubcf.index == chosen_user])
 
