@@ -1,5 +1,3 @@
-data
 connection
-description_cz
 *.json
 *.ipynb_checkpoints
